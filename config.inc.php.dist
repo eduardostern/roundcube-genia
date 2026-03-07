@@ -1,0 +1,96 @@
+<?php
+
+/**
+ * GenIA — AI Email Assistant for Roundcube
+ *
+ * Copy this file to config.inc.php and adjust the settings below.
+ *
+ * Supports multiple AI backends:
+ * - OpenAI (GPT-4o, GPT-4.1, etc.) — Responses API
+ * - Anthropic (Claude Sonnet, Haiku, Opus) — Messages API
+ * - xAI (Grok-3, Grok-3-mini, etc.) — Responses API
+ * - Ollama (Llama, Mistral, Qwen, etc.) — Chat Completions API (local, no API key)
+ * - LM Studio, LocalAI, vLLM, text-generation-webui — Chat Completions API
+ * - Any OpenAI-compatible endpoint
+ *
+ * API types:
+ *   'responses'        — OpenAI Responses API (/v1/responses) — default
+ *   'anthropic'        — Anthropic Messages API (/v1/messages) — Claude models
+ *   'chat_completions' — OpenAI Chat Completions API (/v1/chat/completions) — Ollama, LM Studio, etc.
+ */
+
+// ============================================================
+// OPTION 1: Multi-provider (recommended)
+// ============================================================
+// Configure one or more AI providers. Users can switch between them in the UI.
+// Only providers with a valid api_key (or local chat_completions providers) will appear.
+
+$config['lifeprisma_ai_providers'] = [
+    'openai' => [
+        'label'    => 'GPT',                                    // Button label in UI
+        'api_url'  => 'https://api.openai.com/v1/responses',    // Responses API endpoint
+        'api_type' => 'responses',                               // 'responses' or 'chat_completions'
+        'api_key'  => '',                                        // Your OpenAI API key (https://platform.openai.com/api-keys)
+        'model'    => 'gpt-5.4',                                 // Default model
+        'models'   => ['gpt-5.4', 'gpt-4.1', 'gpt-4o'],        // Available models for this provider
+    ],
+    'xai' => [
+        'label'    => 'Grok',
+        'api_url'  => 'https://api.x.ai/v1/responses',
+        'api_type' => 'responses',
+        'api_key'  => '',                                        // Your xAI API key (https://console.x.ai)
+        'model'    => 'grok-4.1-fast',
+        'models'   => ['grok-4.1-fast', 'grok-3'],
+    ],
+    'anthropic' => [
+        'label'    => 'Claude',
+        'api_url'  => 'https://api.anthropic.com/v1/messages',
+        'api_type' => 'anthropic',                               // Required for Anthropic
+        'api_key'  => '',                                        // Your Anthropic API key (https://console.anthropic.com/settings/keys)
+        'model'    => 'claude-sonnet-4-6',
+        'models'   => ['claude-sonnet-4-6', 'claude-haiku-4-5-20251001'],
+        'supports_reasoning' => false,
+    ],
+    // ---- LOCAL / SELF-HOSTED PROVIDERS (no data leaves your network) ----
+    // 'ollama' => [
+    //     'label'    => 'Ollama',
+    //     'api_url'  => 'http://localhost:11434/v1/chat/completions',
+    //     'api_type' => 'chat_completions',                      // Required for Ollama
+    //     'api_key'  => '',                                      // Not needed for local Ollama
+    //     'model'    => 'llama3.1',
+    //     'models'   => ['llama3.1', 'mistral', 'qwen2.5'],
+    //     'supports_reasoning' => false,
+    // ],
+    // 'lmstudio' => [
+    //     'label'    => 'LM Studio',
+    //     'api_url'  => 'http://localhost:1234/v1/chat/completions',
+    //     'api_type' => 'chat_completions',
+    //     'api_key'  => '',
+    //     'model'    => 'local-model',
+    //     'models'   => ['local-model'],
+    //     'supports_reasoning' => false,
+    // ],
+];
+
+// ============================================================
+// OPTION 2: Simple single-provider (legacy, still works)
+// ============================================================
+// If you only need one provider, you can use the flat config instead.
+// The multi-provider config above takes priority if both are set.
+
+// $config['lifeprisma_ai_api_key'] = '';
+// $config['lifeprisma_ai_model'] = 'gpt-4o';
+// $config['lifeprisma_ai_api_url'] = 'https://api.openai.com/v1/responses';
+
+// ============================================================
+// Global settings (apply to all providers)
+// ============================================================
+
+// Maximum output tokens per request (default: 2000)
+$config['lifeprisma_ai_max_tokens'] = 2000;
+
+// Temperature for "None" reasoning mode (0.0 - 1.0, default: 0.5)
+$config['lifeprisma_ai_temperature'] = 0.5;
+
+// Default language for generated emails
+$config['lifeprisma_ai_default_language'] = 'English';

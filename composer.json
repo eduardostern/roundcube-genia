@@ -1,0 +1,40 @@
+{
+    "name": "lifeprisma/roundcube-genia",
+    "type": "roundcube-plugin",
+    "description": "GenIA — AI-powered email assistant for Roundcube. Multi-provider (OpenAI, Grok), streaming, inline translate, scam detection, smart reply, summarize, and more.",
+    "license": "MIT",
+    "version": "2.0.0",
+    "keywords": [
+        "roundcube",
+        "plugin",
+        "ai",
+        "openai",
+        "grok",
+        "xai",
+        "gpt",
+        "email",
+        "assistant",
+        "translate",
+        "scam",
+        "lifeprisma",
+        "genia"
+    ],
+    "authors": [
+        {
+            "name": "Eduardo Stern",
+            "email": "eduardostern@icloud.com",
+            "homepage": "https://lifeprisma.com"
+        }
+    ],
+    "homepage": "https://github.com/eduardostern/roundcube-genia",
+    "require": {
+        "php": ">=8.0",
+        "roundcube/plugin-installer": ">=0.1.3"
+    },
+    "extra": {
+        "roundcube": {
+            "min-version": "1.5.0",
+            "max-version": "1.8.99"
+        }
+    }
+}
