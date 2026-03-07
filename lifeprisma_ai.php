@@ -497,8 +497,8 @@ class lifeprisma_ai extends rcube_plugin
             ob_end_flush();
         }
 
-        // Send initial SSE comment to prime the connection and flush nginx buffers
-        echo ": stream start\n\n";
+        // Send a "thinking" event so the client knows we're processing
+        echo "data: " . json_encode(['type' => 'status', 'message' => 'Connecting to AI...']) . "\n\n";
         flush();
 
         $ch = curl_init($api_url);
@@ -512,6 +512,7 @@ class lifeprisma_ai extends rcube_plugin
         }
 
         $stream_api_type = $api_type;
+        $stream_buffer = '';
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
             CURLOPT_POSTFIELDS => json_encode($payload),
@@ -519,8 +520,12 @@ class lifeprisma_ai extends rcube_plugin
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT => 120,
             CURLOPT_SSL_VERIFYPEER => !$is_local,
-            CURLOPT_WRITEFUNCTION => function ($ch, $data) use ($stream_api_type) {
-                $lines = explode("\n", $data);
+            CURLOPT_WRITEFUNCTION => function ($ch, $data) use ($stream_api_type, &$stream_buffer) {
+                $stream_buffer .= $data;
+                $lines = explode("\n", $stream_buffer);
+                // Keep the last (possibly incomplete) line in the buffer
+                $stream_buffer = array_pop($lines);
+
                 foreach ($lines as $line) {
                     $line = trim($line);
                     if (empty($line)) continue;

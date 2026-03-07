@@ -842,7 +842,9 @@ function lpai_stream_to_element(postData, targetEl, controller, onDone, onError)
                     if (jsonStr === '[DONE]') continue;
                     try {
                         var event = JSON.parse(jsonStr);
-                        if (event.type === 'delta') {
+                        if (event.type === 'status') {
+                            // skip status events in inline streaming
+                        } else if (event.type === 'delta') {
                             fullText += event.text;
                             targetEl.innerHTML = lpai_md_to_html(fullText);
                         } else if (event.type === 'error') {
@@ -1571,9 +1573,7 @@ function lpai_submit() {
         var buffer = '';
         var fullText = '';
 
-        if (loading) loading.style.display = 'none';
-        if (preview) preview.style.display = 'block';
-        if (previewText) previewText.textContent = '';
+        // Keep loading spinner visible until first delta arrives
         if (previewLabel) previewLabel.textContent = 'Preview';
 
         function readChunk() {
@@ -1634,7 +1634,11 @@ function lpai_submit() {
 
                     try {
                         var event = JSON.parse(jsonStr);
-                        if (event.type === 'delta') {
+                        if (event.type === 'status') {
+                            if (loadingText) loadingText.textContent = event.message || 'Processing...';
+                        } else if (event.type === 'delta') {
+                            if (loading && loading.style.display !== 'none') loading.style.display = 'none';
+                            if (preview && preview.style.display === 'none') { preview.style.display = 'block'; if (previewText) previewText.textContent = ''; }
                             fullText += event.text;
                             if (previewText) previewText.innerHTML = lpai_md_to_html(fullText);
                             previewText.scrollTop = previewText.scrollHeight;
