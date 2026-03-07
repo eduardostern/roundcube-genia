@@ -9,6 +9,8 @@ if (window.rcmail) {
 
         if (task === 'mail' && action === 'compose') {
             lpai_add_compose_button();
+            // Check if we should auto-open GenIA reply panel
+            lpai_check_pending_reply();
         }
 
         if (task === 'mail' && (action === 'show' || action === 'preview')) {
@@ -63,6 +65,20 @@ function lpai_restore_prefs() {
             if (saved.verbosity) lpai_options.verbosity = saved.verbosity;
             if (saved.provider) lpai_options.provider = saved.provider;
             if (saved.model) lpai_options.model = saved.model;
+        }
+    } catch (e) {}
+}
+
+function lpai_check_pending_reply() {
+    try {
+        var pending = localStorage.getItem('lpai_pending_reply');
+        if (pending) {
+            localStorage.removeItem('lpai_pending_reply');
+            // Wait for TinyMCE/compose to fully load, then open GenIA with reply
+            setTimeout(function() {
+                lpai_open_panel('compose');
+                lpai_select_action('reply');
+            }, 800);
         }
     } catch (e) {}
 }
@@ -575,7 +591,11 @@ function lpai_add_quick_actions() {
     replyBtn.type = 'button';
     replyBtn.className = 'lpai-qa-btn lpai-qa-reply';
     replyBtn.innerHTML = '&#10024; Reply with AI';
-    replyBtn.onclick = function() { lpai_open_panel('read'); lpai_select_action('reply'); };
+    replyBtn.onclick = function() {
+        // Navigate to compose reply and auto-open GenIA there
+        try { localStorage.setItem('lpai_pending_reply', '1'); } catch (e) {}
+        rcmail.command('reply');
+    };
     bar.appendChild(replyBtn);
 
     // --- Result panel (hidden) ---
@@ -1293,9 +1313,9 @@ function lpai_open_panel(context) {
         if (fixBtn) fixBtn.style.display = 'none';
         if (translateBtn) translateBtn.style.display = 'none';
         if (subjectLineBtn) subjectLineBtn.style.display = 'none';
+        if (replyBtn) replyBtn.style.display = 'none';
         if (summarizeBtn) summarizeBtn.style.display = '';
         if (threadSumBtn) threadSumBtn.style.display = '';
-        if (replyBtn) replyBtn.style.display = '';
         if (scamBtn) scamBtn.style.display = '';
     } else {
         if (composeBtn) composeBtn.style.display = '';
