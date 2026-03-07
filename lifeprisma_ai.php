@@ -756,7 +756,7 @@ class lifeprisma_ai extends rcube_plugin
             "5. Match the requested tone and language precisely.\n" .
             "6. Be natural and human-sounding, not robotic.\n" .
             "7. When composing replies, be contextually aware of the conversation.\n" .
-            "8. Use plain text formatting with line breaks, no HTML. Always put a line break after the greeting (e.g. 'Olá,\\n\\n' not 'Olá,Texto').\n" .
+            "8. Use markdown formatting (bold, lists, tables). For tables use markdown pipe syntax (| col | col |), never ASCII art (+---+). Always put a line break after the greeting (e.g. 'Olá,\\n\\n' not 'Olá,Texto').\n" .
             "9. If the user gives a follow-up instruction like 'make it shorter' or 'now translate it', " .
             "apply it to the previously generated text.";
     }
