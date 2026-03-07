@@ -376,6 +376,82 @@
 #lpai-preview-text li { margin: 2px 0; }
 
 /* ============================
+   Context Preview
+   ============================ */
+#lpai-context-preview {
+    margin-bottom: 8px;
+    border: 1px solid #ddd;
+    border-radius: 0.25rem;
+    overflow: hidden;
+}
+
+.lpai-context-toggle {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b9fa7;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    cursor: pointer;
+    background: #f4f4f4;
+    user-select: none;
+    transition: background 0.15s;
+}
+
+.lpai-context-toggle:hover { background: #eee; }
+
+.lpai-context-body {
+    padding: 8px 12px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: #555;
+    max-height: 150px;
+    overflow-y: auto;
+    border-top: 1px solid #ddd;
+}
+
+.lpai-context-body hr { border: none; border-top: 1px solid #eee; margin: 6px 0; }
+
+/* ============================
+   Templates
+   ============================ */
+.lpai-template-select {
+    padding: 4px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 0.25rem;
+    font-size: 12px;
+    font-family: inherit;
+    color: #2c363a;
+    background: #fff;
+    min-width: 140px;
+    max-width: 200px;
+}
+
+.lpai-template-select:focus {
+    outline: none;
+    border-color: #37beff;
+    box-shadow: 0 0 0 0.2rem rgba(55, 190, 255, 0.25);
+}
+
+/* ============================
+   Draft Button
+   ============================ */
+#lpai-draft {
+    padding: 8px 14px;
+    background: #6c757d;
+    color: #fff;
+    border: 1px solid #6c757d;
+    border-radius: 0.25rem;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: inherit;
+}
+
+#lpai-draft:hover { background: #5a6268; border-color: #545b62; }
+
+/* ============================
    Loading
    ============================ */
 #lpai-loading {
@@ -864,6 +940,24 @@ html.dark-mode #lpai-powered:hover,
 
 html.dark-mode #lpai-undo-bar,
 .dark-mode #lpai-undo-bar { background: #161b1d; }
+
+html.dark-mode #lpai-context-preview,
+.dark-mode #lpai-context-preview { border-color: #4d6066; }
+
+html.dark-mode .lpai-context-toggle,
+.dark-mode .lpai-context-toggle { background: #2c373a; color: #7c949c; }
+
+html.dark-mode .lpai-context-toggle:hover,
+.dark-mode .lpai-context-toggle:hover { background: #374549; }
+
+html.dark-mode .lpai-context-body,
+.dark-mode .lpai-context-body { color: #8b9fa7; border-top-color: #4d6066; }
+
+html.dark-mode .lpai-template-select,
+.dark-mode .lpai-template-select { background: #21292c; border-color: #4d6066; color: #c5d1d3; }
+
+html.dark-mode #lpai-draft,
+.dark-mode #lpai-draft { background: #4d6066; border-color: #4d6066; }
 
 /* Quick Actions dark mode */
 html.dark-mode .lpai-qa-bar,

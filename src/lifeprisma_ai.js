@@ -15,6 +15,7 @@ if (window.rcmail) {
             lpai_add_message_button();
         }
 
+        lpai_apply_server_prefs();
         lpai_restore_prefs();
         lpai_bind_events();
     });
@@ -64,6 +65,92 @@ function lpai_restore_prefs() {
             if (saved.model) lpai_options.model = saved.model;
         }
     } catch (e) {}
+}
+
+function lpai_apply_server_prefs() {
+    var sp = rcmail.env.lpai_user_prefs || {};
+    if (sp.language && !localStorage.getItem('lpai_prefs')) lpai_options.language = sp.language;
+    if (sp.tone && !localStorage.getItem('lpai_prefs')) lpai_options.tone = sp.tone;
+}
+
+// ========================================
+// Templates
+// ========================================
+var lpai_templates = [];
+
+function lpai_load_templates() {
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', rcmail.url('plugin.lifeprisma_ai_templates'));
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState !== 4) return;
+        try {
+            var data = JSON.parse(xhr.responseText);
+            if (data.status === 'success') {
+                lpai_templates = data.templates || [];
+                lpai_render_templates();
+            }
+        } catch (e) {}
+    };
+    xhr.send('op=list&_token=' + encodeURIComponent(rcmail.env.request_token));
+}
+
+function lpai_render_templates() {
+    var sel = document.getElementById('lpai-template-select');
+    if (!sel) return;
+    sel.innerHTML = '<option value="">Select template...</option>';
+    for (var i = 0; i < lpai_templates.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = lpai_templates[i].name;
+        sel.appendChild(opt);
+    }
+}
+
+function lpai_save_template() {
+    var input = document.getElementById('lpai-input');
+    var instruction = input ? input.value.trim() : '';
+    var action = lpai_current_action || 'compose';
+
+    var name = prompt('Template name:');
+    if (!name) return;
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', rcmail.url('plugin.lifeprisma_ai_templates'));
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState !== 4) return;
+        try {
+            var data = JSON.parse(xhr.responseText);
+            if (data.status === 'success') {
+                lpai_templates = data.templates || [];
+                lpai_render_templates();
+                if (rcmail.display_message) rcmail.display_message('Template saved', 'confirmation');
+            }
+        } catch (e) {}
+    };
+    xhr.send('op=save&name=' + encodeURIComponent(name) + '&tpl_action=' + encodeURIComponent(action) + '&instruction=' + encodeURIComponent(instruction) + '&_token=' + encodeURIComponent(rcmail.env.request_token));
+}
+
+function lpai_delete_template(idx) {
+    if (idx < 0 || idx >= lpai_templates.length) return;
+    var tpl = lpai_templates[idx];
+
+    var xhr = new XMLHttpRequest();
+    xhr.open('POST', rcmail.url('plugin.lifeprisma_ai_templates'));
+    xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+    xhr.onreadystatechange = function() {
+        if (xhr.readyState !== 4) return;
+        try {
+            var data = JSON.parse(xhr.responseText);
+            if (data.status === 'success') {
+                lpai_templates = data.templates || [];
+                lpai_render_templates();
+                if (rcmail.display_message) rcmail.display_message('Template deleted', 'confirmation');
+            }
+        } catch (e) {}
+    };
+    xhr.send('op=delete&id=' + encodeURIComponent(tpl.id) + '&_token=' + encodeURIComponent(rcmail.env.request_token));
 }
 
 // ========================================
@@ -247,6 +334,14 @@ function lpai_add_compose_quick_actions() {
     rewriteBtn.innerHTML = '&#9998; Rewrite';
     rewriteBtn.onclick = function() { lpai_open_panel('compose'); lpai_select_action('rewrite'); };
     bar.appendChild(rewriteBtn);
+
+    // --- Suggest Subject button ---
+    var subjectBtn = document.createElement('button');
+    subjectBtn.type = 'button';
+    subjectBtn.className = 'lpai-qa-btn';
+    subjectBtn.innerHTML = '&#128221; Subject';
+    subjectBtn.onclick = function() { lpai_suggest_subject(subjectBtn); };
+    bar.appendChild(subjectBtn);
 
     // --- Compose with AI button ---
     var composeBtn = document.createElement('button');
@@ -459,6 +554,14 @@ function lpai_add_quick_actions() {
     sumBtn.onclick = function() { lpai_quick_action('summarize', sumBtn); };
     bar.appendChild(sumBtn);
 
+    // --- Thread Summary button ---
+    var threadBtn = document.createElement('button');
+    threadBtn.type = 'button';
+    threadBtn.className = 'lpai-qa-btn';
+    threadBtn.innerHTML = '&#128209; Thread Summary';
+    threadBtn.onclick = function() { lpai_quick_action('thread_summarize', threadBtn); };
+    bar.appendChild(threadBtn);
+
     // --- Scam Check button ---
     var scamBtn = document.createElement('button');
     scamBtn.type = 'button';
@@ -546,7 +649,7 @@ function lpai_quick_action(action, clickedBtn) {
     resultPanel.style.display = 'block';
     resultPanel.className = 'lpai-qa-result' + (action === 'scam' ? ' lpai-qa-result-scam' : '');
     resultText.innerHTML = '';
-    if (resultTitle) resultTitle.textContent = action === 'scam' ? 'Scam Analysis' : 'Summary';
+    if (resultTitle) resultTitle.textContent = action === 'scam' ? 'Scam Analysis' : action === 'thread_summarize' ? 'Thread Summary' : 'Summary';
 
     // Disable button
     var origLabel = clickedBtn.innerHTML;
@@ -739,6 +842,175 @@ function lpai_stream_to_element(postData, targetEl, controller, onDone, onError)
 }
 
 // ========================================
+// Subject Line Generator
+// ========================================
+function lpai_suggest_subject(clickedBtn) {
+    lpai_init_provider();
+
+    var editorContent = lpai_get_editor_content();
+    if (!editorContent.trim()) {
+        if (rcmail.display_message) rcmail.display_message('Write something first, then suggest a subject', 'notice');
+        return;
+    }
+
+    var origLabel = clickedBtn.innerHTML;
+    clickedBtn.disabled = true;
+    clickedBtn.innerHTML = '&#9203; Thinking...';
+
+    var postData = {
+        _action: 'plugin.lifeprisma_ai_stream',
+        ai_action: 'suggest_subject',
+        instruction: '',
+        email_body: editorContent,
+        reply_text: '',
+        subject: '',
+        language: lpai_options.language,
+        tone: lpai_options.tone,
+        sender_name: lpai_get_sender_name(),
+        reasoning: 'none',
+        verbosity: 'low',
+        provider: lpai_options.provider,
+        model: lpai_options.model,
+        history: '[]',
+        msg_uid: '',
+        mbox: '',
+        view_context: 'compose',
+        _token: rcmail.env.request_token
+    };
+
+    var encoded = [];
+    for (var key in postData) {
+        encoded.push(encodeURIComponent(key) + '=' + encodeURIComponent(postData[key]));
+    }
+
+    fetch(rcmail.url('plugin.lifeprisma_ai_request'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: encoded.join('&')
+    }).then(function(r) { return r.json(); }).then(function(data) {
+        clickedBtn.disabled = false;
+        clickedBtn.innerHTML = origLabel;
+
+        if (data.status === 'success' && data.result) {
+            lpai_show_subject_picker(data.result);
+        } else {
+            if (rcmail.display_message) rcmail.display_message('Error: ' + (data.message || 'Failed'), 'error');
+        }
+    }).catch(function(err) {
+        clickedBtn.disabled = false;
+        clickedBtn.innerHTML = origLabel;
+        if (rcmail.display_message) rcmail.display_message('Error: ' + err.message, 'error');
+    });
+}
+
+function lpai_show_subject_picker(text) {
+    var existing = document.getElementById('lpai-subject-picker');
+    if (existing) existing.remove();
+
+    var lines = text.split('\n').filter(function(l) { return l.trim().match(/^\d+[\.\)]/); });
+    if (lines.length === 0) lines = text.split('\n').filter(function(l) { return l.trim().length > 0; });
+
+    var picker = document.createElement('div');
+    picker.id = 'lpai-subject-picker';
+    picker.className = 'lpai-qa-result';
+    picker.style.margin = '0 0 4px 0';
+
+    var header = document.createElement('div');
+    header.className = 'lpai-qa-result-header';
+    header.innerHTML = '<span>Pick a subject line</span>';
+    var closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'lpai-qa-result-close';
+    closeBtn.innerHTML = '&times;';
+    closeBtn.onclick = function() { picker.remove(); };
+    header.appendChild(closeBtn);
+    picker.appendChild(header);
+
+    var body = document.createElement('div');
+    body.className = 'lpai-qa-result-text';
+    body.style.padding = '4px 8px';
+
+    for (var i = 0; i < lines.length; i++) {
+        (function(line) {
+            var cleaned = line.replace(/^\d+[\.\)]\s*/, '').replace(/^["']|["']$/g, '').trim();
+            var btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'lpai-qa-btn';
+            btn.style.cssText = 'display:block;width:100%;text-align:left;margin:3px 0;padding:6px 10px;white-space:normal';
+            btn.textContent = cleaned;
+            btn.onclick = function() {
+                var subjectInput = document.getElementById('compose-subject') || document.querySelector('input[name="_subject"]');
+                if (subjectInput) {
+                    subjectInput.value = cleaned;
+                    if (rcmail.display_message) rcmail.display_message('Subject line applied', 'confirmation');
+                }
+                picker.remove();
+            };
+            body.appendChild(btn);
+        })(lines[i]);
+    }
+
+    picker.appendChild(body);
+
+    var bar = document.getElementById('lpai-qa-bar-compose');
+    if (bar) bar.parentNode.insertBefore(picker, bar.nextSibling);
+}
+
+// ========================================
+// Context Preview
+// ========================================
+function lpai_update_context_preview() {
+    var ctx = document.getElementById('lpai-context-preview');
+    var body = document.getElementById('lpai-context-body');
+    if (!ctx || !body) return;
+
+    if (!lpai_current_action) {
+        ctx.style.display = 'none';
+        return;
+    }
+
+    var emailBody = lpai_get_editor_content();
+    var replyText = lpai_get_reply_text();
+    var subject = lpai_get_subject();
+    var parts = [];
+
+    if (subject) parts.push('<strong>Subject:</strong> ' + subject.replace(/</g, '&lt;'));
+    if (['reply', 'summarize', 'scam', 'thread_summarize'].indexOf(lpai_current_action) >= 0 && replyText) {
+        var preview = replyText.substring(0, 300);
+        if (replyText.length > 300) preview += '...';
+        parts.push('<strong>Original email:</strong> ' + preview.replace(/</g, '&lt;').replace(/\n/g, '<br>'));
+    }
+    if (['rewrite', 'fix', 'translate'].indexOf(lpai_current_action) >= 0 && emailBody) {
+        var preview = emailBody.substring(0, 300);
+        if (emailBody.length > 300) preview += '...';
+        parts.push('<strong>Current draft:</strong> ' + preview.replace(/</g, '&lt;').replace(/\n/g, '<br>'));
+    }
+
+    if (parts.length > 0) {
+        body.innerHTML = parts.join('<hr style="border:none;border-top:1px solid #eee;margin:6px 0">');
+        ctx.style.display = 'block';
+    } else {
+        ctx.style.display = 'none';
+    }
+}
+
+// ========================================
+// Draft Integration
+// ========================================
+function lpai_save_as_draft() {
+    if (!lpai_last_result) return;
+
+    lpai_undo_text = lpai_get_editor_content();
+    lpai_set_editor_content(lpai_last_result);
+    lpai_close_panel();
+
+    setTimeout(function() {
+        if (rcmail.command) rcmail.command('savedraft');
+        if (rcmail.display_message) rcmail.display_message('GenIA content saved as draft', 'confirmation');
+    }, 300);
+}
+
+// ========================================
 // Model Buttons
 // ========================================
 function lpai_update_model_buttons() {
@@ -824,6 +1096,45 @@ function lpai_bind_events() {
         if (e.target.id === 'lpai-undo') {
             lpai_undo();
         }
+        if (e.target.id === 'lpai-draft') {
+            lpai_save_as_draft();
+        }
+        if (e.target.id === 'lpai-template-save') {
+            lpai_save_template();
+        }
+        if (e.target.id === 'lpai-template-delete') {
+            var sel = document.getElementById('lpai-template-select');
+            if (sel && sel.value !== '') lpai_delete_template(parseInt(sel.value));
+        }
+        if (e.target.id === 'lpai-context-toggle' || e.target.id === 'lpai-context-arrow') {
+            var body = document.getElementById('lpai-context-body');
+            var arrow = document.getElementById('lpai-context-arrow');
+            if (body) {
+                var show = body.style.display === 'none';
+                body.style.display = show ? 'block' : 'none';
+                if (arrow) arrow.innerHTML = show ? '&#9660;' : '&#9654;';
+            }
+        }
+    });
+
+    // Template select change
+    document.addEventListener('change', function(e) {
+        if (e.target.id === 'lpai-template-select') {
+            var idx = parseInt(e.target.value);
+            var delBtn = document.getElementById('lpai-template-delete');
+            if (isNaN(idx) || idx < 0 || idx >= lpai_templates.length) {
+                if (delBtn) delBtn.style.display = 'none';
+                return;
+            }
+            if (delBtn) delBtn.style.display = '';
+            var tpl = lpai_templates[idx];
+            if (tpl.action) lpai_select_action(tpl.action);
+            var input = document.getElementById('lpai-input');
+            if (input && tpl.instruction) {
+                input.value = tpl.instruction;
+                input.style.display = '';
+            }
+        }
     });
 
     document.addEventListener('keydown', function(e) {
@@ -898,14 +1209,23 @@ function lpai_open_panel(context) {
         return;
     }
 
+    var draftBtn = document.getElementById('lpai-draft');
+    var templatesRow = document.getElementById('lpai-templates-row');
+    var ctxPreview = document.getElementById('lpai-context-preview');
+
     if (input) { input.value = ''; input.placeholder = 'What do you want GenIA to do?'; input.style.display = ''; }
     if (preview) preview.style.display = 'none';
     if (applyBtn) applyBtn.style.display = 'none';
     if (copyBtn) copyBtn.style.display = 'none';
     if (undoBtn) undoBtn.style.display = 'none';
+    if (draftBtn) draftBtn.style.display = 'none';
     if (loading) loading.style.display = 'none';
     if (langRow) langRow.style.display = 'none';
     if (toneRow) toneRow.style.display = 'none';
+    if (templatesRow) templatesRow.style.display = 'flex';
+    if (ctxPreview) ctxPreview.style.display = 'none';
+
+    lpai_load_templates();
 
     // Restore saved option buttons
     document.querySelectorAll('.lpai-opt-btn[data-group="language"]').forEach(function(b) {
@@ -948,13 +1268,17 @@ function lpai_open_panel(context) {
     var fixBtn = document.querySelector('[data-action="fix"]');
     var translateBtn = document.querySelector('[data-action="translate"]');
     var scamBtn = document.querySelector('[data-action="scam"]');
+    var subjectLineBtn = document.querySelector('[data-action="suggest_subject"]');
+    var threadSumBtn = document.querySelector('[data-action="thread_summarize"]');
 
     if (context === 'read') {
         if (composeBtn) composeBtn.style.display = 'none';
         if (rewriteBtn) rewriteBtn.style.display = 'none';
         if (fixBtn) fixBtn.style.display = 'none';
         if (translateBtn) translateBtn.style.display = 'none';
+        if (subjectLineBtn) subjectLineBtn.style.display = 'none';
         if (summarizeBtn) summarizeBtn.style.display = '';
+        if (threadSumBtn) threadSumBtn.style.display = '';
         if (replyBtn) replyBtn.style.display = '';
         if (scamBtn) scamBtn.style.display = '';
     } else {
@@ -962,7 +1286,9 @@ function lpai_open_panel(context) {
         if (rewriteBtn) rewriteBtn.style.display = '';
         if (fixBtn) fixBtn.style.display = '';
         if (translateBtn) translateBtn.style.display = '';
+        if (subjectLineBtn) subjectLineBtn.style.display = '';
         if (summarizeBtn) summarizeBtn.style.display = '';
+        if (threadSumBtn) threadSumBtn.style.display = 'none';
         if (replyBtn) replyBtn.style.display = '';
         if (scamBtn) scamBtn.style.display = '';
     }
@@ -1033,6 +1359,10 @@ function lpai_select_action(action) {
                 input.placeholder = 'What should the reply say?';
                 input.style.display = '';
                 break;
+            case 'suggest_subject':
+                input.style.display = 'none';
+                break;
+            case 'thread_summarize':
             case 'translate':
             case 'summarize':
             case 'fix':
@@ -1042,6 +1372,8 @@ function lpai_select_action(action) {
         }
         if (input.style.display !== 'none') input.focus();
     }
+
+    lpai_update_context_preview();
 }
 
 // ========================================
@@ -1224,8 +1556,18 @@ function lpai_submit() {
                         // Show copy button always
                         if (copyBtn) copyBtn.style.display = '';
 
-                        if (['summarize', 'scam'].indexOf(lpai_current_action) < 0) {
+                        if (['summarize', 'scam', 'suggest_subject', 'thread_summarize'].indexOf(lpai_current_action) < 0) {
                             if (applyBtn) applyBtn.style.display = '';
+                            var draftBtn = document.getElementById('lpai-draft');
+                            if (draftBtn) draftBtn.style.display = '';
+                        }
+
+                        // Auto-save draft if preference enabled
+                        var sp = rcmail.env.lpai_user_prefs || {};
+                        if (sp.auto_draft && ['summarize', 'scam', 'suggest_subject', 'thread_summarize'].indexOf(lpai_current_action) < 0) {
+                            lpai_undo_text = lpai_get_editor_content();
+                            lpai_set_editor_content(fullText);
+                            setTimeout(function() { if (rcmail.command) rcmail.command('savedraft'); }, 300);
                         }
 
                         // Show follow-up hint
@@ -1328,8 +1670,10 @@ function lpai_submit_fallback(postData) {
                 if (preview) preview.style.display = 'block';
 
                 if (copyBtn) copyBtn.style.display = '';
-                if (['summarize', 'scam'].indexOf(lpai_current_action) < 0) {
+                if (['summarize', 'scam', 'suggest_subject', 'thread_summarize'].indexOf(lpai_current_action) < 0) {
                     if (applyBtn) applyBtn.style.display = '';
+                    var draftBtn = document.getElementById('lpai-draft');
+                    if (draftBtn) draftBtn.style.display = '';
                 }
             } else {
                 var msg = data.message || 'An error occurred';

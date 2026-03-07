@@ -2,19 +2,23 @@
 
 class lifeprisma_ai extends rcube_plugin
 {
-    public $task = 'mail';
+    public $task = 'mail|settings';
 
     public function init()
     {
         $this->load_config();
         $this->add_texts('localization/', true);
-        $this->include_stylesheet($this->local_skin_path() . '/style.css');
+        $this->include_stylesheet($this->local_skin_path() . '/style.min.css');
         $this->include_script('lifeprisma_ai.min.js');
 
         $this->register_action('plugin.lifeprisma_ai_request', [$this, 'handle_request']);
         $this->register_action('plugin.lifeprisma_ai_stream', [$this, 'handle_stream']);
+        $this->register_action('plugin.lifeprisma_ai_templates', [$this, 'handle_templates']);
 
         $this->add_hook('render_page', [$this, 'render_page']);
+        $this->add_hook('preferences_sections_list', [$this, 'preferences_sections']);
+        $this->add_hook('preferences_list', [$this, 'preferences_list']);
+        $this->add_hook('preferences_save', [$this, 'preferences_save']);
     }
 
     public function render_page($args)
@@ -37,6 +41,15 @@ class lifeprisma_ai extends rcube_plugin
                 ];
             }
             $rcmail->output->set_env('lpai_providers', $js_providers);
+
+            // Pass user preferences to JS
+            $prefs = $rcmail->user->get_prefs();
+            $rcmail->output->set_env('lpai_user_prefs', [
+                'language' => $prefs['genia_language'] ?? '',
+                'tone' => $prefs['genia_tone'] ?? '',
+                'auto_draft' => $prefs['genia_auto_draft'] ?? 0,
+            ]);
+
             $rcmail->output->add_footer($this->get_ai_panel_html($js_providers));
         }
         return $args;
@@ -132,6 +145,8 @@ class lifeprisma_ai extends rcube_plugin
             <button type="button" class="lpai-action-btn" data-action="summarize">Summarize</button>
             <button type="button" class="lpai-action-btn" data-action="fix">Fix Grammar</button>
             <button type="button" class="lpai-action-btn lpai-action-scam" data-action="scam">Check Scam</button>
+            <button type="button" class="lpai-action-btn" data-action="suggest_subject">Subject Line</button>
+            <button type="button" class="lpai-action-btn" data-action="thread_summarize">Thread Summary</button>
         </div>
         <div id="lpai-model-row" class="lpai-btn-group">
             <span class="lpai-group-label">Model</span>
@@ -167,12 +182,23 @@ class lifeprisma_ai extends rcube_plugin
             <button type="button" class="lpai-opt-btn active" data-group="verbosity" data-value="medium">Balanced</button>
             <button type="button" class="lpai-opt-btn" data-group="verbosity" data-value="high">Detailed</button>
         </div>
+        <div id="lpai-templates-row" class="lpai-btn-group" style="display:none">
+            <span class="lpai-group-label">Templates</span>
+            <select id="lpai-template-select" class="lpai-template-select"><option value="">Select template...</option></select>
+            <button type="button" id="lpai-template-save" class="lpai-opt-btn" title="Save current as template">Save</button>
+            <button type="button" id="lpai-template-delete" class="lpai-opt-btn" title="Delete selected template" style="display:none">Del</button>
+        </div>
+        <div id="lpai-context-preview" style="display:none">
+            <div id="lpai-context-toggle" class="lpai-context-toggle">Context preview <span id="lpai-context-arrow">&#9654;</span></div>
+            <div id="lpai-context-body" class="lpai-context-body" style="display:none"></div>
+        </div>
         <textarea id="lpai-input" placeholder="What do you want GenIA to do?" rows="3"></textarea>
         <div id="lpai-buttons">
             <button id="lpai-submit" type="button">Generate</button>
             <button id="lpai-apply" type="button" style="display:none">Apply to Email</button>
             <button id="lpai-copy" type="button" style="display:none">Copy</button>
             <button id="lpai-undo" type="button" style="display:none">Undo</button>
+            <button id="lpai-draft" type="button" style="display:none">Save Draft</button>
         </div>
         <div id="lpai-preview" style="display:none">
             <div id="lpai-preview-label">Preview:</div>
@@ -192,10 +218,152 @@ class lifeprisma_ai extends rcube_plugin
     }
 
     /**
+     * User preferences — add GenIA section
+     */
+    public function preferences_sections($args)
+    {
+        $args['list']['genia'] = [
+            'id' => 'genia',
+            'section' => 'GenIA AI Assistant',
+        ];
+        return $args;
+    }
+
+    public function preferences_list($args)
+    {
+        if ($args['section'] !== 'genia') return $args;
+
+        $rcmail = rcmail::get_instance();
+        $prefs = $rcmail->user->get_prefs();
+
+        $languages = ['Portuguese' => 'Portuguese', 'English' => 'English', 'Spanish' => 'Spanish', 'French' => 'French', 'German' => 'German', 'Italian' => 'Italian'];
+        $tones = ['professional' => 'Professional', 'casual' => 'Casual', 'friendly' => 'Friendly', 'formal' => 'Formal', 'urgent' => 'Urgent'];
+
+        $lang_select = new html_select(['name' => '_genia_language', 'id' => 'genia_language']);
+        foreach ($languages as $k => $v) $lang_select->add($v, $k);
+
+        $tone_select = new html_select(['name' => '_genia_tone', 'id' => 'genia_tone']);
+        foreach ($tones as $k => $v) $tone_select->add($v, $k);
+
+        $draft_checkbox = new html_checkbox(['name' => '_genia_auto_draft', 'id' => 'genia_auto_draft', 'value' => 1]);
+
+        $args['blocks']['genia_general'] = [
+            'name' => 'General Settings',
+            'options' => [
+                'genia_language' => [
+                    'title' => 'Default language',
+                    'content' => $lang_select->show($prefs['genia_language'] ?? 'Portuguese'),
+                ],
+                'genia_tone' => [
+                    'title' => 'Default tone',
+                    'content' => $tone_select->show($prefs['genia_tone'] ?? 'professional'),
+                ],
+                'genia_auto_draft' => [
+                    'title' => 'Auto-save AI content as draft',
+                    'content' => $draft_checkbox->show($prefs['genia_auto_draft'] ?? 0),
+                ],
+            ],
+        ];
+
+        return $args;
+    }
+
+    public function preferences_save($args)
+    {
+        if ($args['section'] !== 'genia') return $args;
+
+        $args['prefs']['genia_language'] = rcube_utils::get_input_string('_genia_language', rcube_utils::INPUT_POST);
+        $args['prefs']['genia_tone'] = rcube_utils::get_input_string('_genia_tone', rcube_utils::INPUT_POST);
+        $args['prefs']['genia_auto_draft'] = rcube_utils::get_input_string('_genia_auto_draft', rcube_utils::INPUT_POST) ? 1 : 0;
+
+        return $args;
+    }
+
+    /**
+     * Handle email templates (save/load/delete)
+     */
+    public function handle_templates()
+    {
+        $rcmail = rcmail::get_instance();
+        header('Content-Type: application/json; charset=utf-8');
+
+        $op = rcube_utils::get_input_string('op', rcube_utils::INPUT_POST) ?: rcube_utils::get_input_string('op', rcube_utils::INPUT_GET);
+        $prefs = $rcmail->user->get_prefs();
+        $templates = $prefs['genia_templates'] ?? [];
+
+        if ($op === 'list') {
+            echo json_encode(['status' => 'success', 'templates' => $templates]);
+            exit;
+        }
+
+        if ($op === 'save') {
+            $name = rcube_utils::get_input_string('name', rcube_utils::INPUT_POST);
+            $action = rcube_utils::get_input_string('tpl_action', rcube_utils::INPUT_POST);
+            $instruction = rcube_utils::get_input_string('instruction', rcube_utils::INPUT_POST);
+
+            if (empty($name)) {
+                echo json_encode(['status' => 'error', 'message' => 'Template name is required']);
+                exit;
+            }
+
+            $templates[] = [
+                'id' => uniqid('tpl_'),
+                'name' => $name,
+                'action' => $action,
+                'instruction' => $instruction,
+            ];
+
+            $rcmail->user->save_prefs(['genia_templates' => $templates]);
+            echo json_encode(['status' => 'success', 'templates' => $templates]);
+            exit;
+        }
+
+        if ($op === 'delete') {
+            $id = rcube_utils::get_input_string('id', rcube_utils::INPUT_POST);
+            $templates = array_values(array_filter($templates, function ($t) use ($id) {
+                return $t['id'] !== $id;
+            }));
+            $rcmail->user->save_prefs(['genia_templates' => $templates]);
+            echo json_encode(['status' => 'success', 'templates' => $templates]);
+            exit;
+        }
+
+        echo json_encode(['status' => 'error', 'message' => 'Invalid operation']);
+        exit;
+    }
+
+    /**
+     * Rate limiting — per-user cooldown
+     */
+    private function check_rate_limit()
+    {
+        $rcmail = rcmail::get_instance();
+        $cooldown = (int) $rcmail->config->get('lifeprisma_ai_rate_limit', 3);
+        if ($cooldown <= 0) return true;
+
+        $session_key = 'lpai_last_request';
+        $last = $_SESSION[$session_key] ?? 0;
+        $now = microtime(true);
+
+        if ($now - $last < $cooldown) {
+            return false;
+        }
+
+        $_SESSION[$session_key] = $now;
+        return true;
+    }
+
+    /**
      * Streaming endpoint — sends Server-Sent Events
      */
     public function handle_stream()
     {
+        if (!$this->check_rate_limit()) {
+            header('Content-Type: text/event-stream');
+            echo "data: " . json_encode(['type' => 'error', 'message' => 'Please wait a few seconds between requests.']) . "\n\n";
+            exit;
+        }
+
         $rcmail = rcmail::get_instance();
 
         $action = rcube_utils::get_input_string('ai_action', rcube_utils::INPUT_POST);
@@ -451,6 +619,12 @@ class lifeprisma_ai extends rcube_plugin
      */
     public function handle_request()
     {
+        if (!$this->check_rate_limit()) {
+            header('Content-Type: application/json; charset=utf-8');
+            echo json_encode(['status' => 'error', 'message' => 'Please wait a few seconds between requests.']);
+            exit;
+        }
+
         $rcmail = rcmail::get_instance();
         header('Content-Type: application/json; charset=utf-8');
 
@@ -725,6 +899,17 @@ class lifeprisma_ai extends rcube_plugin
 
     private function build_system_prompt($action = '')
     {
+        if ($action === 'suggest_subject') {
+            return "You are an email subject line expert. Generate clear, concise, professional subject lines. " .
+                "Return ONLY a numbered list of 5 subject lines, nothing else.";
+        }
+
+        if ($action === 'thread_summarize') {
+            return "You are an expert email thread analyst. Summarize threads clearly and concisely. " .
+                "Use markdown formatting (bold for key points, bullet lists for action items). " .
+                "Structure: Overview, Key Points, Action Items, Current Status.";
+        }
+
         if ($action === 'scam') {
             return "You are a cybersecurity expert specialized in email fraud detection. " .
                 "Analyze the email for signs of scam, phishing, fraud, social engineering, or suspicious content.\n\n" .
@@ -822,6 +1007,20 @@ class lifeprisma_ai extends rcube_plugin
                 }
                 $prompt .= "=== EMAIL BODY ===\n{$text}";
                 return $prompt;
+
+            case 'suggest_subject':
+                return "Based on this email body, suggest 5 concise, professional subject lines in {$language}. " .
+                    "Format as a numbered list. Each should be clear and specific.\n\n" .
+                    "Email body:\n{$email_body}";
+
+            case 'thread_summarize':
+                $text = $reply_text ?: $email_body;
+                return "Summarize this entire email thread in {$language}. Include:\n" .
+                    "- Key discussion points\n" .
+                    "- Decisions made\n" .
+                    "- Action items and who is responsible\n" .
+                    "- Current status\n\n" .
+                    "Thread:\n{$text}";
 
             default:
                 return "Help with this email in {$language} with a {$tone} tone.\n" .
