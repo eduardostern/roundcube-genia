@@ -479,8 +479,6 @@ function lpai_add_message_button() {
 // ========================================
 // Quick Actions Toolbar (Read View)
 // ========================================
-var lpai_translate_original = null;
-var lpai_translate_controller = null;
 var lpai_qa_controller = null;
 
 function lpai_add_quick_actions() {
@@ -540,24 +538,11 @@ function lpai_add_quick_actions() {
             item.innerHTML = lang.flag + ' ' + lang.value;
             item.onclick = function() {
                 trMenu.classList.remove('open');
-                lpai_translate_inline(lang.value, trBtn);
+                lpai_translate_to(lang.value, trBtn);
             };
             trMenu.appendChild(item);
         })(langs[i]);
     }
-
-    // Show original
-    var origItem = document.createElement('button');
-    origItem.type = 'button';
-    origItem.className = 'lpai-qa-menu-item lpai-qa-menu-orig';
-    origItem.id = 'lpai-tr-orig';
-    origItem.innerHTML = '\u21A9 Show Original';
-    origItem.style.display = 'none';
-    origItem.onclick = function() {
-        trMenu.classList.remove('open');
-        lpai_translate_show_original();
-    };
-    trMenu.appendChild(origItem);
 
     trWrap.appendChild(trMenu);
     bar.appendChild(trWrap);
@@ -727,31 +712,33 @@ function lpai_quick_action(action, clickedBtn) {
 }
 
 // ========================================
-// Translate Inline (Read View)
+// Translate (Read View — shows in result panel)
 // ========================================
-function lpai_translate_inline(language, toggleBtn) {
+function lpai_translate_to(language, toggleBtn) {
     lpai_init_provider();
 
     var msgPart = document.querySelector('#messagebody .message-part, #messagebody .message-htmlpart, #messagebody');
     if (!msgPart) return;
 
-    if (!lpai_translate_original) {
-        lpai_translate_original = msgPart.innerHTML;
-    }
+    var resultPanel = document.getElementById('lpai-qa-result');
+    var resultText = document.getElementById('lpai-qa-result-text');
+    var resultTitle = document.getElementById('lpai-qa-result-title');
 
-    var origItem = document.getElementById('lpai-tr-orig');
+    if (!resultPanel || !resultText) return;
 
+    resultPanel.style.display = 'block';
+    resultPanel.className = 'lpai-qa-result';
+    resultText.innerHTML = '';
+    if (resultTitle) resultTitle.textContent = 'Translation (' + language + ')';
+
+    var origLabel = toggleBtn.innerHTML;
     toggleBtn.disabled = true;
     toggleBtn.innerHTML = '&#9203; Translating...';
 
-    if (lpai_translate_controller) lpai_translate_controller.abort();
-    lpai_translate_controller = new AbortController();
+    if (lpai_qa_controller) lpai_qa_controller.abort();
+    lpai_qa_controller = new AbortController();
 
-    var bodyText = (lpai_translate_original ? (function() {
-        var tmp = document.createElement('div');
-        tmp.innerHTML = lpai_translate_original;
-        return tmp.innerText || tmp.textContent || '';
-    })() : msgPart.innerText || msgPart.textContent || '');
+    var bodyText = msgPart.innerText || msgPart.textContent || '';
 
     var postData = {
         _action: 'plugin.lifeprisma_ai_stream',
@@ -774,32 +761,15 @@ function lpai_translate_inline(language, toggleBtn) {
         _token: rcmail.env.request_token
     };
 
-    lpai_stream_to_element(postData, msgPart, lpai_translate_controller, function() {
-        lpai_translate_controller = null;
+    lpai_stream_to_element(postData, resultText, lpai_qa_controller, function() {
         toggleBtn.disabled = false;
-        toggleBtn.innerHTML = '&#127760; Translated &#10003;';
-        toggleBtn.classList.add('translated');
-        if (origItem) origItem.style.display = '';
+        toggleBtn.innerHTML = origLabel;
+        lpai_qa_controller = null;
     }, function(err) {
         toggleBtn.disabled = false;
-        toggleBtn.innerHTML = '&#127760; Translate &#9662;';
-        lpai_translate_controller = null;
+        toggleBtn.innerHTML = origLabel;
+        lpai_qa_controller = null;
     });
-}
-
-function lpai_translate_show_original() {
-    var msgPart = document.querySelector('#messagebody .message-part, #messagebody .message-htmlpart, #messagebody');
-    if (msgPart && lpai_translate_original) {
-        msgPart.innerHTML = lpai_translate_original;
-        lpai_translate_original = null;
-    }
-    var toggle = document.getElementById('lpai-qa-translate');
-    if (toggle) {
-        toggle.innerHTML = '&#127760; Translate &#9662;';
-        toggle.classList.remove('translated');
-    }
-    var origItem = document.getElementById('lpai-tr-orig');
-    if (origItem) origItem.style.display = 'none';
 }
 
 // ========================================
@@ -1445,13 +1415,6 @@ function lpai_set_editor_content(text) {
 }
 
 function lpai_get_reply_text() {
-    // In read view, prefer original content over translated content
-    if (lpai_translate_original) {
-        var tmp = document.createElement('div');
-        tmp.innerHTML = lpai_translate_original;
-        return tmp.innerText || tmp.textContent || '';
-    }
-
     // Try to get just the message content, not the full #messagebody container
     var msgBody = document.querySelector('#messagebody .message-part, #messagebody .message-htmlpart');
     if (msgBody) return msgBody.innerText || msgBody.textContent || '';
