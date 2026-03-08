@@ -742,6 +742,45 @@ class lifeprisma_ai extends rcube_plugin
     }
 
     /**
+     * Redis cache helpers
+     */
+    private function redis_connect()
+    {
+        static $redis = null;
+        if ($redis !== null) return $redis;
+        try {
+            $redis = new Redis();
+            $redis->connect('127.0.0.1', 6379);
+            $redis->setOption(Redis::OPT_PREFIX, 'lpai:');
+            return $redis;
+        } catch (\Exception $e) {
+            $redis = false;
+            return false;
+        }
+    }
+
+    private function cache_get($key)
+    {
+        $r = $this->redis_connect();
+        if (!$r) return null;
+        try {
+            $val = $r->get($key);
+            return $val !== false ? json_decode($val, true) : null;
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    private function cache_set($key, $data, $ttl = 86400)
+    {
+        $r = $this->redis_connect();
+        if (!$r) return;
+        try {
+            $r->setex($key, $ttl, json_encode($data));
+        } catch (\Exception $e) {}
+    }
+
+    /**
      * Streaming endpoint — sends Server-Sent Events
      */
     public function handle_stream()
@@ -778,6 +817,25 @@ class lifeprisma_ai extends rcube_plugin
         $api_type = $provider['api_type'] ?? 'responses';
         $max_tokens = (int) $rcmail->config->get('lifeprisma_ai_max_tokens', 2000);
         $temperature = (float) $rcmail->config->get('lifeprisma_ai_temperature', 0.5);
+
+        // Redis cache for read-view actions (first request only, no follow-ups)
+        $cacheable_actions = ['summarize', 'thread_summarize', 'translate', 'scam'];
+        $stream_cache_key = null;
+        if ($view_context === 'read' && in_array($action, $cacheable_actions)
+            && !empty($msg_uid) && !empty($mbox) && empty($instruction) && empty($history)) {
+            $stream_cache_key = "stream:{$action}:{$mbox}:{$msg_uid}:{$language}:{$model}";
+            $cached = $this->cache_get($stream_cache_key);
+            if ($cached !== null) {
+                $this->ai_log("[STREAM CACHE HIT] action=$action key=$stream_cache_key");
+                header('Content-Type: text/event-stream');
+                header('Cache-Control: no-cache, no-store, must-revalidate');
+                header('X-Accel-Buffering: no');
+                echo "data: " . json_encode(['type' => 'delta', 'text' => $cached['result']]) . "\n\n";
+                echo "data: " . json_encode(['type' => 'done', 'model' => $cached['model'], 'cached' => true, 'usage' => $cached['tokens'] ?? []]) . "\n\n";
+                flush();
+                exit;
+            }
+        }
 
         $is_local = $api_type === 'chat_completions' && strpos($api_url, 'localhost') !== false;
         if (empty($api_key) && !$is_local) {
@@ -932,6 +990,8 @@ class lifeprisma_ai extends rcube_plugin
         $stream_model = $model;
         $stream_action = $action;
         $stream_first_chunk = true;
+        $stream_full_text = '';
+        $stream_tokens = ['input' => 0, 'output' => 0];
         $log_fn = function($msg) { rcube::write_log('genia', $msg); };
         curl_setopt_array($ch, [
             CURLOPT_POST => true,
@@ -940,7 +1000,7 @@ class lifeprisma_ai extends rcube_plugin
             CURLOPT_RETURNTRANSFER => false,
             CURLOPT_TIMEOUT => 120,
             CURLOPT_SSL_VERIFYPEER => !$is_local,
-            CURLOPT_WRITEFUNCTION => function ($ch, $data) use ($stream_api_type, &$stream_buffer, &$stream_first_chunk, $stream_model, $stream_action, $log_fn) {
+            CURLOPT_WRITEFUNCTION => function ($ch, $data) use ($stream_api_type, &$stream_buffer, &$stream_first_chunk, $stream_model, $stream_action, $log_fn, &$stream_full_text, &$stream_tokens) {
                 // Detect non-SSE error response (e.g. API returns plain JSON error)
                 if ($stream_first_chunk) {
                     $stream_first_chunk = false;
@@ -977,6 +1037,7 @@ class lifeprisma_ai extends rcube_plugin
                         if ($type === 'content_block_delta') {
                             $delta = $event['delta']['text'] ?? '';
                             if ($delta !== '') {
+                                $stream_full_text .= $delta;
                                 echo "data: " . json_encode(['type' => 'delta', 'text' => $delta]) . "\n\n";
                                 flush();
                             }
@@ -986,12 +1047,10 @@ class lifeprisma_ai extends rcube_plugin
                         } elseif ($type === 'message_delta') {
                             $usage = $event['usage'] ?? [];
                             if (!empty($usage)) {
+                                $stream_tokens = ['input' => $usage['input_tokens'] ?? 0, 'output' => $usage['output_tokens'] ?? 0];
                                 echo "data: " . json_encode([
                                     'type' => 'done',
-                                    'tokens' => [
-                                        'input' => $usage['input_tokens'] ?? 0,
-                                        'output' => $usage['output_tokens'] ?? 0,
-                                    ],
+                                    'tokens' => $stream_tokens,
                                 ]) . "\n\n";
                                 flush();
                             }
@@ -1005,18 +1064,17 @@ class lifeprisma_ai extends rcube_plugin
                         // OpenAI Chat Completions / Ollama format
                         $delta = $event['choices'][0]['delta']['content'] ?? '';
                         if ($delta !== '') {
+                            $stream_full_text .= $delta;
                             echo "data: " . json_encode(['type' => 'delta', 'text' => $delta]) . "\n\n";
                             flush();
                         }
                         $finish = $event['choices'][0]['finish_reason'] ?? null;
                         if ($finish === 'stop') {
                             $usage = $event['usage'] ?? [];
+                            $stream_tokens = ['input' => $usage['prompt_tokens'] ?? 0, 'output' => $usage['completion_tokens'] ?? 0];
                             echo "data: " . json_encode([
                                 'type' => 'done',
-                                'tokens' => [
-                                    'input' => $usage['prompt_tokens'] ?? 0,
-                                    'output' => $usage['completion_tokens'] ?? 0,
-                                ],
+                                'tokens' => $stream_tokens,
                             ]) . "\n\n";
                             flush();
                         }
@@ -1025,16 +1083,15 @@ class lifeprisma_ai extends rcube_plugin
                         $type = $event['type'] ?? '';
                         if ($type === 'response.output_text.delta') {
                             $delta = $event['delta'] ?? '';
+                            $stream_full_text .= $delta;
                             echo "data: " . json_encode(['type' => 'delta', 'text' => $delta]) . "\n\n";
                             flush();
                         } elseif ($type === 'response.completed') {
                             $usage = $event['response']['usage'] ?? [];
+                            $stream_tokens = ['input' => $usage['input_tokens'] ?? 0, 'output' => $usage['output_tokens'] ?? 0];
                             echo "data: " . json_encode([
                                 'type' => 'done',
-                                'tokens' => [
-                                    'input' => $usage['input_tokens'] ?? 0,
-                                    'output' => $usage['output_tokens'] ?? 0,
-                                ],
+                                'tokens' => $stream_tokens,
                             ]) . "\n\n";
                             flush();
                         } elseif ($type === 'error') {
@@ -1062,6 +1119,15 @@ class lifeprisma_ai extends rcube_plugin
         }
 
         curl_close($ch);
+
+        // Cache streaming result in Redis (1h for read-view actions)
+        if ($stream_cache_key && !empty($stream_full_text)) {
+            $this->cache_set($stream_cache_key, [
+                'result' => $stream_full_text,
+                'model' => $model,
+                'tokens' => $stream_tokens,
+            ], 3600);
+        }
 
         echo "data: [DONE]\n\n";
         flush();
@@ -1105,6 +1171,17 @@ class lifeprisma_ai extends rcube_plugin
         $api_type = $provider['api_type'] ?? 'responses';
         $max_tokens = (int) $rcmail->config->get('lifeprisma_ai_max_tokens', 2000);
         $temperature = (float) $rcmail->config->get('lifeprisma_ai_temperature', 0.5);
+
+        // Redis cache for detect_followup
+        if ($action === 'detect_followup' && !empty($msg_uid) && !empty($mbox)) {
+            $cache_key = "fu:{$mbox}:{$msg_uid}";
+            $cached = $this->cache_get($cache_key);
+            if ($cached !== null) {
+                $this->ai_log("[EMAIL ANALYSIS] CACHE HIT key=$cache_key");
+                echo json_encode($cached);
+                exit;
+            }
+        }
 
         $is_local = $api_type === 'chat_completions' && strpos($api_url, 'localhost') !== false;
         if (empty($api_key) && !$is_local) {
@@ -1277,7 +1354,7 @@ class lifeprisma_ai extends rcube_plugin
         $usage = $data['usage'] ?? [];
         $input_tokens = $usage['input_tokens'] ?? $usage['prompt_tokens'] ?? 0;
         $output_tokens = $usage['output_tokens'] ?? $usage['completion_tokens'] ?? 0;
-        echo json_encode([
+        $response = [
             'status' => 'success',
             'result' => trim($content),
             'model' => $model,
@@ -1285,7 +1362,16 @@ class lifeprisma_ai extends rcube_plugin
                 'input' => $input_tokens,
                 'output' => $output_tokens,
             ],
-        ]);
+        ];
+
+        // Cache detect_followup results in Redis (24h)
+        if ($action === 'detect_followup' && !empty($msg_uid) && !empty($mbox)) {
+            $cache_key = "fu:{$mbox}:{$msg_uid}";
+            $response['cached'] = true;
+            $this->cache_set($cache_key, $response, 86400);
+        }
+
+        echo json_encode($response);
         exit;
     }
 

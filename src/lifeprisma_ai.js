@@ -1878,11 +1878,13 @@ function lpai_submit() {
                             previewText.scrollTop = previewText.scrollHeight;
                         } else if (event.type === 'done') {
                             var label = 'Preview';
+                            if (event.model) label += ' \u00B7 ' + event.model;
                             if (event.tokens) {
                                 label += ' \u00B7 ' + event.tokens.input + ' in / ' + event.tokens.output + ' out';
-                                var cost = lpai_estimate_cost(lpai_options.model, event.tokens.input, event.tokens.output);
+                                var cost = lpai_estimate_cost(event.model || lpai_options.model, event.tokens.input, event.tokens.output);
                                 if (cost) label += ' \u00B7 ' + cost;
                             }
+                            if (event.cached) label += ' \u00B7 Cached';
                             if (previewLabel) previewLabel.textContent = label;
                         } else if (event.type === 'error') {
                             if (previewText) previewText.textContent = 'Error: ' + (event.message || 'Unknown error');
