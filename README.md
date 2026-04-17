@@ -53,7 +53,7 @@ GenIA brings the same AI-powered email experience to your own mail server. No ve
 
 When reading an email, a toolbar appears above the message body with one-click actions:
 
-- **Translate** — dropdown with 6 languages, streams translation inline, "Show Original" to revert
+- **Translate** — dropdown with 7 languages, streams translation inline, "Show Original" to revert
 - **Summarize** — streams a summary in a result panel above the email
 - **Scam Check** — analyzes the email with color-coded verdict (green/yellow/red)
 - **Reply with AI** — opens the full GenIA panel in reply mode
@@ -76,7 +76,7 @@ Switch between AI providers directly in the UI. Mix cloud and local:
 
 - **Reasoning Effort** — None / Low / Medium / High
 - **Verbosity** — Concise / Balanced / Detailed
-- **Language** — Portuguese, English, Spanish, French, German, Italian
+- **Language** — Portuguese, English, Spanish, French, German, Italian, Dutch
 - **Tone** — Professional, Casual, Friendly, Formal, Urgent
 
 ### Smart Features
