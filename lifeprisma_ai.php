@@ -240,6 +240,7 @@ class lifeprisma_ai extends rcube_plugin
             <button type="button" class="lpai-opt-btn" data-group="language" data-value="French">FR</button>
             <button type="button" class="lpai-opt-btn" data-group="language" data-value="German">DE</button>
             <button type="button" class="lpai-opt-btn" data-group="language" data-value="Italian">IT</button>
+            <button type="button" class="lpai-opt-btn" data-group="language" data-value="Dutch">NL</button>
         </div>
         <div id="lpai-tone-row" class="lpai-btn-group" style="display:none">
             <span class="lpai-group-label">Tone</span>
@@ -325,7 +326,7 @@ class lifeprisma_ai extends rcube_plugin
         $rcmail = rcmail::get_instance();
         $prefs = $rcmail->user->get_prefs();
 
-        $languages = ['Portuguese' => 'Portuguese', 'English' => 'English', 'Spanish' => 'Spanish', 'French' => 'French', 'German' => 'German', 'Italian' => 'Italian'];
+        $languages = ['Portuguese' => 'Portuguese', 'English' => 'English', 'Spanish' => 'Spanish', 'French' => 'French', 'German' => 'German', 'Italian' => 'Italian', 'Dutch' => 'Dutch'];
         $tones = ['professional' => 'Professional', 'casual' => 'Casual', 'friendly' => 'Friendly', 'formal' => 'Formal', 'urgent' => 'Urgent'];
 
         $lang_select = new html_select(['name' => '_genia_language', 'id' => 'genia_language']);
@@ -343,7 +344,7 @@ class lifeprisma_ai extends rcube_plugin
             'options' => [
                 'genia_language' => [
                     'title' => 'Default language',
-                    'content' => $lang_select->show($prefs['genia_language'] ?? 'Portuguese'),
+                    'content' => $lang_select->show($prefs['genia_language'] ?? 'English'),
                 ],
                 'genia_tone' => [
                     'title' => 'Default tone',

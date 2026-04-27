@@ -41,7 +41,7 @@ var lpai_stream_controller = null;
 var lpai_options = {
     provider: '',
     model: '',
-    language: 'Portuguese',
+    language: 'English',
     tone: 'professional',
     reasoning: 'none',
     verbosity: 'medium'
@@ -330,7 +330,8 @@ function lpai_add_compose_quick_actions() {
         { code: 'ES', value: 'Spanish', flag: '\uD83C\uDDEA\uD83C\uDDF8' },
         { code: 'FR', value: 'French', flag: '\uD83C\uDDEB\uD83C\uDDF7' },
         { code: 'DE', value: 'German', flag: '\uD83C\uDDE9\uD83C\uDDEA' },
-        { code: 'IT', value: 'Italian', flag: '\uD83C\uDDEE\uD83C\uDDF9' }
+        { code: 'IT', value: 'Italian', flag: '\uD83C\uDDEE\uD83C\uDDF9' },
+        { code: 'NL', value: 'Dutch', flag: '\uD83C\uDDF3\uD83C\uDDF1' }
     ];
 
     for (var i = 0; i < langs.length; i++) {
@@ -559,7 +560,8 @@ function lpai_add_quick_actions() {
         { code: 'ES', value: 'Spanish', flag: '\uD83C\uDDEA\uD83C\uDDF8' },
         { code: 'FR', value: 'French', flag: '\uD83C\uDDEB\uD83C\uDDF7' },
         { code: 'DE', value: 'German', flag: '\uD83C\uDDE9\uD83C\uDDEA' },
-        { code: 'IT', value: 'Italian', flag: '\uD83C\uDDEE\uD83C\uDDF9' }
+        { code: 'IT', value: 'Italian', flag: '\uD83C\uDDEE\uD83C\uDDF9' },
+        { code: 'NL', value: 'Dutch', flag: '\uD83C\uDDF3\uD83C\uDDF1' }
     ];
 
     for (var i = 0; i < langs.length; i++) {
@@ -1351,11 +1353,12 @@ function lpai_open_panel(context) {
             readGrid.id = 'lpai-read-grid';
             readGrid.className = 'lpai-read-grid';
 
-            var defaultLang = lpai_options.language || 'Portuguese';
+            var defaultLang = lpai_options.language || 'English';
             var langs = [
                 { code: 'Portuguese', label: 'PT' }, { code: 'English', label: 'EN' },
                 { code: 'Spanish', label: 'ES' }, { code: 'French', label: 'FR' },
                 { code: 'German', label: 'DE' }, { code: 'Italian', label: 'IT' },
+                { code: 'Dutch', label: 'NL' }
             ];
 
             // Language bar
@@ -2181,7 +2184,7 @@ function lpai_detect_tone_and_language() {
 
                 // Auto-detect language for translation
                 if (info.language) {
-                    var langMap = { 'pt': 'Portuguese', 'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German', 'it': 'Italian' };
+                    var langMap = { 'pt': 'Portuguese', 'en': 'English', 'es': 'Spanish', 'fr': 'French', 'de': 'German', 'it': 'Italian', 'nl': 'Dutch' };
                     var detected = langMap[info.language] || null;
                     if (detected) {
                         // Store detected source language
@@ -2464,7 +2467,7 @@ function lpai_render_admin(root, data, urlSave, token) {
     html += '<div class="lpai-admin-field"><label>Temperature (0.0-1.0)</label><input type="number" id="lpai-admin-temperature" class="lpai-admin-input" step="0.1" min="0" max="1" value="' + (settings.temperature || 0.5) + '"></div>';
     html += '<div class="lpai-admin-field"><label>Rate Limit (seconds between requests)</label><input type="number" id="lpai-admin-rate-limit" class="lpai-admin-input" value="' + (settings.rate_limit || 3) + '"></div>';
     html += '<div class="lpai-admin-field"><label>Default Language</label><select id="lpai-admin-language" class="lpai-admin-input">';
-    var langs = ['Portuguese', 'English', 'Spanish', 'French', 'German', 'Italian'];
+    var langs = ['Portuguese', 'English', 'Spanish', 'French', 'German', 'Italian', 'Dutch'];
     for (var li = 0; li < langs.length; li++) {
         html += '<option value="' + langs[li] + '"' + (settings.default_language === langs[li] ? ' selected' : '') + '>' + langs[li] + '</option>';
     }
